@@ -19,7 +19,7 @@ async def main_loop():
         try:
             # 1. Executar consulta no banco de origem e obter dados
             df = fetch_data(source_conn, query)
-
+            
             df_ids_exists, df_ids_not_exists = check_data_exists(target_conn, df, "execution_history")
             
             # Para o exists vou fazer um update

@@ -42,14 +42,58 @@ def check_table_exists(connection, table_name):
 def check_data_exists(connection, df, table_name):
     """
     Verifica se os dados do DataFrame já existem na tabela especificada no banco de destino.
+    Retorna dois DataFrames: um com os dados que já existem e outro com os dados que não existem.
     """
     # Neste exemplo, vamos assumir que a tabela possui uma coluna 'id' como chave única para verificação
-    if 'id' not in df.columns:
-        raise ValueError("A coluna 'id' não está presente no DataFrame para verificação de duplicidade.")
+    if 'execution_id' not in df.columns:
+        raise ValueError("A coluna 'execution_id' não está presente no DataFrame para verificação de duplicidade.")
     
-    ids = df['id'].tolist()
-    query = sql.SQL("SELECT id FROM {} WHERE id = ANY(%s)").format(sql.Identifier(table_name))
+    ids = df['execution_id'].tolist()
+    query = f"SELECT ref_id FROM {table_name} WHERE ref_id = ANY(%s)"
     with connection.cursor() as cursor:
         cursor.execute(query, (ids,))
         result = cursor.fetchall()
-    return len(result) > 0
+        existing_ids = [row[0] for row in result]
+    
+    # Criar DataFrame com os dados que já existem no banco
+    df_exists = df[df['execution_id'].isin(existing_ids)]
+    
+    # Criar DataFrame com os dados que não existem no banco
+    df_not_exists = df[~df['execution_id'].isin(existing_ids)]
+    
+    return df_exists, df_not_exists
+
+def update_existing_data(connection, df_exists, table_name):
+    """
+    Atualiza os dados do DataFrame que já existem na tabela especificada no banco de destino.
+    """
+
+    if df_exists.empty:
+        return
+    
+    with connection.cursor() as cursor:
+        for _, row in df_exists.iterrows():
+            query = f"""
+            UPDATE {table_name}
+            SET ref_id = %s, robot_name = %s, machine_id = %s, start_time = %s, end_time = %s, status = %s
+            WHERE ref_id = %s
+            """
+            cursor.execute(query, (row['execution_id'], row['robot_name'], row['machine_id'], row['start_time'], row['end_time'], row['status'], row['execution_id']))
+        connection.commit()
+
+def insert_new_data(connection, df_not_exists, table_name):
+    """
+    Insere os dados do DataFrame que não existem na tabela especificada no banco de destino.
+    """
+
+    if df_not_exists.empty:
+        return
+    
+    with connection.cursor() as cursor:
+        for _, row in df_not_exists.iterrows():
+            query = f"""
+            INSERT INTO {table_name} (ref_id, robot_name, machine_id, start_time, end_time, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (row['execution_id'], row['robot_name'], row['machine_id'], row['start_time'], row['end_time'], row['status']))
+        connection.commit()

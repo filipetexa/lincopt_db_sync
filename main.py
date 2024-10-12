@@ -2,10 +2,10 @@
 import pandas as pd
 import asyncio
 import psycopg2
-import config
+from config import config
 from psycopg2 import sql
 from database.connection import get_db_connection
-from database.queries import fetch_data, insert_data, check_table_exists, check_data_exists
+from database.queries import *
 
 async def main_loop():
     while True:
@@ -14,23 +14,20 @@ async def main_loop():
         target_conn = get_db_connection(config['lincopt_database'])
 
         # Query SQL para buscar os dados do banco de origem
-        query = "SELECT * FROM nome_da_tabela"
+        query = "SELECT * FROM executions"
 
         try:
             # 1. Executar consulta no banco de origem e obter dados
             df = fetch_data(source_conn, query)
 
-            # Realizar transformações necessárias no DataFrame (se necessário)
-            df = df.drop(columns=['coluna_irrelevante'], errors='ignore')  # Exemplo de transformação
-
-            # 2. Verifica se os dados já estão no banco do destino
-            if not check_data_exists(target_conn, df, "nome_da_tabela"):
-                # Inserir os dados no banco de destino
-                insert_data(df, target_conn, "nome_da_tabela")
-
-                print("Dados transferidos com sucesso!")
-            else:
-                print("Dados já existem no destino, ignorando inserção.")
+            df_ids_exists, df_ids_not_exists = check_data_exists(target_conn, df, "execution_history")
+            
+            # Para o exists vou fazer um update
+            update_existing_data(target_conn, df_ids_exists, "execution_history")
+            
+            # Para o not exists vou fazer um insert.
+            insert_new_data(target_conn, df_ids_not_exists, "execution_history")
+            
         finally:
             # Fechar conexões
             source_conn.close()
